@@ -25,12 +25,12 @@
       max(6px, env(safe-area-inset-left));
   }
   /* board is 960x500 (1.92:1) — keep it fully on screen either way */
-  #wrap{position:relative;width:min(960px, 100%, calc((100vh - 12px) * 1.92))}
+  #wrap{position:relative;width:min(960px, 100%, calc((100vh - 12px) * 1.778))}
   @supports (height:100dvh){
-    #wrap{width:min(960px, 100%, calc((100dvh - 12px) * 1.92))}
+    #wrap{width:min(960px, 100%, calc((100dvh - 12px) * 1.778))}
   }
   canvas{
-    display:block;width:100%;height:auto;aspect-ratio:960/500;border-radius:16px;
+    display:block;width:100%;height:auto;aspect-ratio:960/540;border-radius:16px;
     box-shadow:0 18px 50px rgba(0,0,0,.55), 0 0 0 3px rgba(255,255,255,.08) inset;
     touch-action:manipulation;cursor:crosshair;
   }
@@ -169,7 +169,7 @@ function lockLandscape(){
 }
 
 /* ---------- canvas ---------- */
-const W = 960, H = 500;
+const W = 960, H = 540;
 const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
 function fit(){
@@ -181,18 +181,18 @@ fit();
 addEventListener('resize', () => { fit(); checkOrientation(); });
 
 /* ---------- world layout (landscape) ---------- */
-const SKY_Y   = 64;
-const SW_Y0   = 64,  SW_Y1 = 180, SW_LANE = 166;
-const RD_Y0   = 190, RD_Y1 = 330;
-const LANE_A  = 226, LANE_B = 296;
-const PR_Y0   = 340, PR_Y1 = 440, PR_LANE = 364;
-const CLIFF_Y = 440;
+const SKY_Y   = 44;
+const SW_Y0   = 44,  SW_Y1 = 156, SW_LANE = 116;   // walking lane, well clear of the kerb
+const RD_Y0   = 190, RD_Y1 = 326;                   // 34px of empty kerb either side
+const LANE_A  = 222, LANE_B = 294;
+const PR_Y0   = 360, PR_Y1 = 476, PR_LANE = 392;
+const CLIFF_Y = 476;
 const XW_L = 430, XW_R = 520, XW_C = 475;
 const POSTS = [180, 300, 640, 800];
 const SIG_X = XW_R + 34;
 
 const SKYLINE = [];
-for (let x = -20; x < W + 40; x += 32) SKYLINE.push([x, 18 + ((x * 7919) % 37)]);
+for (let x = -20; x < W + 40; x += 32) SKYLINE.push([x, 10 + ((x * 7919) % 27)]);
 
 /* ---------- state ---------- */
 let mode = 'menu';
@@ -251,12 +251,12 @@ function newPerson(lane, careless){
     p.dir   = 0;
     p.cdir  = Math.random() < .5 ? -1 : 1;              // -1 up, +1 down
     p.x     = XW_C + rnd(-30, 30);
-    p.y     = p.cdir < 0 ? PR_LANE + rnd(30, 46) : SW_LANE - rnd(30, 46);
+    p.y     = p.cdir < 0 ? PR_LANE + rnd(26, 42) : SW_LANE - rnd(26, 42);
     p.spd   = careless ? rnd(50, 60) : rnd(46, 56);
     p.stage = 'approach';
-    p.waitY = p.cdir < 0 ? RD_Y1 + 8 : RD_Y0 - 8;
+    p.waitY = p.cdir < 0 ? RD_Y1 + 16 : RD_Y0 - 16;
     p.destY = p.cdir < 0 ? SW_LANE : PR_LANE;
-    p.ht    = rnd(1.3, 1.9);                            // kerb hesitation
+    p.ht    = rnd(1.8, 2.6);                            // kerb hesitation
   }
   return p;
 }
@@ -268,7 +268,7 @@ function spawn(){
   let careless = Math.random() < carelessChance;
   // a red runner only makes sense while cars are still rolling, and only if the
   // signal stays red long enough for the whole hesitate-then-dart routine
-  if (lane === 'cross' && careless && !(sig.state === 'stop' && sig.t > 4.5)) careless = false;
+  if (lane === 'cross' && careless && !(sig.state === 'stop' && sig.t > 5.5)) careless = false;
   people.push(newPerson(lane, careless));
 }
 
@@ -330,7 +330,7 @@ function update(dt){
   sig.t -= dt;
   if (sig.t <= 0){
     if (sig.state === 'walk'){ sig.state = 'flash'; sig.t = 2.2; }
-    else if (sig.state === 'flash'){ sig.state = 'stop'; sig.t = 7.5; }
+    else if (sig.state === 'flash'){ sig.state = 'stop'; sig.t = 9.0; }
     else { sig.state = 'walk'; sig.t = 5.2; }
   }
   const walkOK = sig.state === 'walk';
@@ -346,7 +346,11 @@ function update(dt){
     let target = c.base;
     const stopX = c.dir > 0 ? XW_L - c.w/2 - 8 : XW_R + c.w/2 + 8;
     const gap = c.dir > 0 ? stopX - c.x : c.x - stopX;
-    if (yielding && gap > -4 && gap < 190) target = c.base * clamp(gap / 190, 0, 1);
+    if (yielding){
+      // decided once per red: a car already inside the box clears it, the rest stop dead
+      if (c.commit === undefined) c.commit = gap <= 0;
+      if (!c.commit && gap < 200) target = c.base * clamp(gap / 200, 0, 1);
+    } else c.commit = undefined;
     for (const o of cars){
       if (o === c || o.y !== c.y || o.dir !== c.dir) continue;
       const ahead = (o.x - c.x) * c.dir;
@@ -354,6 +358,8 @@ function update(dt){
     }
     c.spd += (target - c.spd) * Math.min(1, dt * 3.5);
     c.x += c.spd * c.dir * dt;
+    // braking lag used to carry cars over the line and straight through the crossing
+    if (yielding && c.commit === false) c.x = c.dir > 0 ? Math.min(c.x, stopX) : Math.max(c.x, stopX);
   }
   cars = cars.filter(c => c.x > -140 && c.x < W + 140);
 
@@ -390,7 +396,7 @@ function update(dt){
           } else {
             let near = null;
             for (const px of POSTS) if (Math.abs(px - p.x) < 56) near = px;
-            if (near !== null) target = p.base - 26;
+            if (near !== null) target = p.base - 22;
           }
           p.y += (target - p.y) * Math.min(1, dt * 5);
         }
@@ -414,19 +420,21 @@ function update(dt){
 
         } else if (p.stage === 'wait'){
           p.walkT = 0;
-          if (walkOK && sig.t > 3.0) p.stage = 'cross';
+          if (walkOK && sig.t > 3.5) p.stage = 'cross';
 
         } else if (p.stage === 'cross'){
           p.y += p.cdir * p.spd * dt;
           if (p.y > RD_Y0 - 14 && p.y < RD_Y1 + 14){
             p.warn = p.careless ? 1 : 0;
-            for (const c of cars){
-              if (c.spd < 20) continue;
-              if (Math.abs(c.x - p.x) < c.w/2 + 9 && Math.abs(c.y - p.y) < 24){
-                p.hitDir = c.dir; doom(p, 'car'); break;
+            if (p.careless){
+              for (const c of cars){
+                if (c.spd < 20) continue;
+                if (Math.abs(c.x - p.x) < c.w/2 + 9 && Math.abs(c.y - p.y) < 24){
+                  p.hitDir = c.dir; doom(p, 'car'); break;
+                }
               }
+              if (p.state !== 'walk') continue;
             }
-            if (p.state !== 'walk') continue;
           } else p.warn = 0;
           const done = p.cdir < 0 ? p.y <= p.destY : p.y >= p.destY;
           if (done){
@@ -537,11 +545,11 @@ function drawScene(){
   for (const x of POSTS){
     ctx.fillStyle = 'rgba(0,0,0,.16)';
     ctx.beginPath(); ctx.ellipse(x, SW_LANE + 2, 13, 5, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = '#3c3446'; roundRect(x - 4, SW_LANE - 62, 8, 62, 3); ctx.fill();
+    ctx.fillStyle = '#3c3446'; roundRect(x - 4, SW_LANE - 58, 8, 58, 3); ctx.fill();
     ctx.fillStyle = '#ffd166';
-    ctx.beginPath(); ctx.ellipse(x, SW_LANE - 66, 10, 12, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x, SW_LANE - 62, 10, 12, 0, 0, 7); ctx.fill();
     ctx.fillStyle = 'rgba(255,209,102,.18)';
-    ctx.beginPath(); ctx.arc(x, SW_LANE - 64, 26, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, SW_LANE - 60, 26, 0, 7); ctx.fill();
   }
 }
 
@@ -585,6 +593,12 @@ function drawPerson(p){
   const floating = p.state === 'float';
   const jittery = p.stage === 'hesitate' && p.state === 'walk';
   const sw = floating ? Math.sin(p.t * 5) * .5 : jittery ? Math.sin(p.t * 14) * .45 : Math.sin(p.walkT);
+
+  if (jittery){   // a clear target ring while they twitch on the kerb
+    const rr = 17 + Math.sin(p.t * 6) * 3;
+    ctx.strokeStyle = 'rgba(255,93,115,.6)'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(0, 1, rr, rr * .4, 0, 0, 7); ctx.stroke();
+  }
 
   ctx.strokeStyle = p.pants; ctx.lineWidth = 5; ctx.lineCap = 'round';
   ctx.beginPath();
@@ -732,7 +746,7 @@ cv.addEventListener('pointerdown', e => {
   if (mode !== 'play' || paused) return;
 
   // nearest person, with a small bias toward the careless one when they overlap
-  let target = null, bd = 36;
+  let target = null, bd = 40;
   for (const p of people){
     if (p.state !== 'walk') continue;
     const d = Math.hypot(p.x - x, (p.y - 30) - y) * (p.careless ? .82 : 1);
