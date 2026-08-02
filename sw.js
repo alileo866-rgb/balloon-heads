@@ -1,6 +1,6 @@
 /* Balloon Heads — offline cache.
    Bump CACHE whenever you change a file, or phones will keep the old copy. */
-const CACHE = 'balloon-heads-v2';
+const CACHE = 'balloon-heads-v3';
 const ASSETS = [
   './',
   './index.html',
